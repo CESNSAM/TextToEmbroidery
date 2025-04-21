@@ -1,0 +1,125 @@
+from pyembroidery import EmbPattern, END, STITCH
+
+LETTER_SPACING = -0.5  # Small negative spacing to ensure letters touch
+SPACE_WIDTH = 100  # Define space width between words
+FONT_FOLDER = "0.75in/"  # Folder with embroidery letter files
+
+# Mapping for special characters
+SPECIAL_CHAR_MAP = {
+    ".": "_dot",
+    "!": "_exc"
+}
+
+def get_first_stitch(letter_pattern):
+    """Returns the first stitch (X, Y) of a given embroidery pattern."""
+    if len(letter_pattern.stitches) > 0:
+        first_x, first_y, _ = letter_pattern.stitches[0]
+        return first_x, first_y
+    return None, None
+
+def get_rightmost_x_touching(letter_pattern):
+    """Finds the rightmost X coordinate at the baseline level where letters should touch."""
+    if len(letter_pattern.stitches) == 0:
+        return None
+    
+    all_y_values = [stitch[1] for stitch in letter_pattern.stitches]
+    median_y = sum(all_y_values) / len(all_y_values)
+    lower_half_stitches = [stitch for stitch in letter_pattern.stitches if stitch[1] >= median_y]
+    
+    if not lower_half_stitches:
+        return None
+    return max(stitch[0] for stitch in lower_half_stitches)
+
+def get_leftmost_x_touching(letter_pattern):
+    """Finds the leftmost X coordinate at the baseline level where letters should touch."""
+    if len(letter_pattern.stitches) == 0:
+        return None
+    
+    all_y_values = [stitch[1] for stitch in letter_pattern.stitches]
+    median_y = sum(all_y_values) / len(all_y_values)
+    lower_half_stitches = [stitch for stitch in letter_pattern.stitches if stitch[1] >= median_y]
+    
+    if not lower_half_stitches:
+        return None
+    return min(stitch[0] for stitch in lower_half_stitches)
+
+def get_lowest_y(letter_pattern):
+    """Finds the absolute lowest Y coordinate of a letter."""
+    if len(letter_pattern.stitches) == 0:
+        return None
+    return max(stitch[1] for stitch in letter_pattern.stitches)
+
+def merge_letters(text):
+    """Merges embroidery letter patterns into a single pattern and aligns letters to touch but not overlap."""
+    if not text:
+        print("No letters provided.")
+        return
+    
+    pattern = EmbPattern()
+    previous_pattern = None
+    baseline_y = None  # Store the lowest Y position of the first letter
+    shift_x = 0  # Track X position
+    previous_was_space = False  # Track if the previous character was a space
+    
+    for index, letter in enumerate(text):
+        if letter == " ":
+            previous_was_space = True  # Set flag to add space before the next letter
+            continue  # Skip processing for spaces
+        
+        letter_pattern = EmbPattern()
+        
+        # Determine correct file name for the character
+        if letter.isupper():
+            file_name = f"{FONT_FOLDER}{letter}_Betty_0,75in_NinviaStore.jef"
+        elif letter.islower():
+            file_name = f"{FONT_FOLDER}{letter}_Betty_lower_0,75in_NinviaStore.jef"
+        elif letter.isdigit():
+            file_name = f"{FONT_FOLDER}{letter}_Betty_0,75in_NinviaStore.jef"
+        elif letter in SPECIAL_CHAR_MAP:
+            file_name = f"{FONT_FOLDER}{SPECIAL_CHAR_MAP[letter]}_Betty_0,75in_NinviaStore.jef"
+        else:
+            print(f"Character '{letter}' is not supported.")
+            continue
+        
+        try:
+            letter_pattern.read(file_name)
+        except Exception as e:
+            print(f"Failed to load {file_name}: {e}")
+            continue
+        
+        if index == 0:
+            baseline_y = get_lowest_y(letter_pattern)
+            print(f"Baseline Y of first letter: {baseline_y}")
+        
+        current_min_y = get_lowest_y(letter_pattern)
+        y_offset = baseline_y - current_min_y if baseline_y is not None and current_min_y is not None else 0
+        
+        if previous_pattern:
+            rightmost_x = get_rightmost_x_touching(previous_pattern)
+            leftmost_x = get_leftmost_x_touching(letter_pattern)
+            
+            if rightmost_x is not None and leftmost_x is not None:
+                shift_x = rightmost_x - leftmost_x + LETTER_SPACING  # Adjusted to ensure touching
+            else:
+                shift_x = LETTER_SPACING
+            
+            if previous_was_space:
+                shift_x += SPACE_WIDTH  # Apply space only before the next letter
+                previous_was_space = False  # Reset flag
+        
+        shifted_stitches = [(x + shift_x, y + y_offset, cmd) for x, y, cmd in letter_pattern.stitches]
+        letter_pattern.stitches = shifted_stitches
+        
+        if not pattern.stitches:
+            pattern = letter_pattern
+        else:
+            pattern.add_pattern(letter_pattern)
+        
+        previous_pattern = letter_pattern
+    
+    output_file = "merged_pattern.jef"
+    pattern.write(output_file)
+    print(f"Generated {output_file} for validation.")
+
+# Example usage
+merge_letters("Test 1234")  # Replace with any letter, number, or special character sequence
